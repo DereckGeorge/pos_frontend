@@ -6,53 +6,135 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/components/auth/AuthProvider"
-import { mockUserRequests } from "@/lib/mockData"
+import { getPendingUsers, approveUser } from "@/lib/api"
 import { UserPlus, Check, X, Clock, Eye } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+
+interface PendingUser {
+  id: string
+  name: string
+  email: string
+  status: string
+  created_at: string
+  updated_at: string
+  position: {
+    name: string
+  }
+  branch: {
+    name: string
+    location: string
+  }
+}
+
+interface PendingUsersResponse {
+  statistics: {
+    total_requests: number
+    approved: number
+    rejected: number
+    pending: number
+  }
+  users: PendingUser[]
+}
 
 export default function UserRequestsPage() {
   const { user } = useAuth()
-  const [requests, setRequests] = useState(mockUserRequests)
+  const [pendingUsersData, setPendingUsersData] = useState<PendingUsersResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [processingAction, setProcessingAction] = useState<string | null>(null)
+
+  const fetchPendingUsers = async () => {
+    try {
+      setLoading(true)
+      const response = await getPendingUsers()
+      
+      if (response.error) {
+        console.error("Failed to fetch pending users:", response.error)
+        setError("Failed to load pending users data")
+      } else {
+        // Extract data from the nested response structure
+        setPendingUsersData(response.data?.data || null)
+      }
+    } catch (err) {
+      console.error("Error fetching pending users:", err)
+      setError("Failed to load data")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchPendingUsers()
+  }, [])
+
+  // Transform API data to match the expected format
+  const requests = pendingUsersData?.users?.map((userData) => ({
+    id: userData.id,
+    requestType: "create_cashier" as const,
+    requestedBy: "system",
+    requestedByName: "System",
+    locationId: userData.branch?.name || "",
+    locationName: userData.branch?.name || "",
+    userData: {
+      name: userData.name,
+      email: userData.email,
+      phone: "",
+      username: userData.email.split("@")[0],
+    },
+    status: userData.status as "pending" | "approved" | "rejected",
+    requestDate: userData.created_at,
+    reviewedBy: undefined,
+    reviewedByName: undefined,
+    reviewedDate: undefined,
+    notes: `Position: ${userData.position?.name || "Unknown"}`,
+  })) || []
 
   // Filter requests based on user role
   const filteredRequests =
     user?.role === "superuser" ? requests : requests.filter((req) => req.requestedBy === user?.id)
 
-  const handleApprove = (requestId: string) => {
+  const handleApprove = async (requestId: string) => {
     if (confirm("Are you sure you want to approve this request?")) {
-      setRequests(
-        requests.map((req) =>
-          req.id === requestId
-            ? {
-                ...req,
-                status: "approved",
-                reviewedBy: user?.id,
-                reviewedByName: user?.name,
-                reviewedDate: new Date().toISOString(),
-              }
-            : req,
-        ),
-      )
-      alert("Request approved successfully!")
+      try {
+        setProcessingAction(requestId)
+        const response = await approveUser(requestId, "approve")
+        
+        if (response.error) {
+          alert(`Failed to approve user: ${response.error}`)
+        } else {
+          alert("User approved successfully!")
+          // Refresh the data to show updated status
+          await fetchPendingUsers()
+        }
+      } catch (err) {
+        console.error("Error approving user:", err)
+        alert("Failed to approve user. Please try again.")
+      } finally {
+        setProcessingAction(null)
+      }
     }
   }
 
-  const handleReject = (requestId: string) => {
-    if (confirm("Are you sure you want to reject this request?")) {
-      setRequests(
-        requests.map((req) =>
-          req.id === requestId
-            ? {
-                ...req,
-                status: "rejected",
-                reviewedBy: user?.id,
-                reviewedByName: user?.name,
-                reviewedDate: new Date().toISOString(),
-              }
-            : req,
-        ),
-      )
-      alert("Request rejected.")
+  const handleReject = async (requestId: string) => {
+    const rejectionReason = prompt("Please provide a reason for rejection:")
+    if (rejectionReason !== null) {
+      try {
+        setProcessingAction(requestId)
+        const response = await approveUser(requestId, "reject", rejectionReason)
+        
+        if (response.error) {
+          alert(`Failed to reject user: ${response.error}`)
+        } else {
+          alert("User rejected successfully!")
+          // Refresh the data to show updated status
+          await fetchPendingUsers()
+        }
+      } catch (err) {
+        console.error("Error rejecting user:", err)
+        alert("Failed to reject user. Please try again.")
+      } finally {
+        setProcessingAction(null)
+      }
     }
   }
 
@@ -79,12 +161,37 @@ export default function UserRequestsPage() {
     })
   }
 
-  const pendingRequests = filteredRequests.filter((req) => req.status === "pending").length
-  const approvedRequests = filteredRequests.filter((req) => req.status === "approved").length
-  const rejectedRequests = filteredRequests.filter((req) => req.status === "rejected").length
+  const pendingRequests = pendingUsersData?.statistics?.pending || 0
+  const approvedRequests = pendingUsersData?.statistics?.approved || 0
+  const rejectedRequests = pendingUsersData?.statistics?.rejected || 0
+  const totalRequests = pendingUsersData?.statistics?.total_requests || 0
 
   const pageTitle = user?.role === "superuser" ? "User Requests" : "Cashier Requests"
-  const allowedRoles = user?.role === "superuser" ? ["superuser"] : ["manager", "superuser"]
+  const allowedRoles: ("superuser" | "manager" | "cashier")[] = user?.role === "superuser" ? ["superuser"] : ["manager", "superuser"]
+
+  if (loading) {
+    return (
+      <RoleBasedRoute allowedRoles={allowedRoles}>
+        <Layout title={pageTitle}>
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        </Layout>
+      </RoleBasedRoute>
+    )
+  }
+
+  if (error) {
+    return (
+      <RoleBasedRoute allowedRoles={allowedRoles}>
+        <Layout title={pageTitle}>
+          <div className="flex items-center justify-center h-64">
+            <p className="text-red-600">{error}</p>
+          </div>
+        </Layout>
+      </RoleBasedRoute>
+    )
+  }
 
   return (
     <RoleBasedRoute allowedRoles={allowedRoles}>
@@ -112,7 +219,7 @@ export default function UserRequestsPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardContent className="p-4">
-                <div className="text-2xl font-bold">{filteredRequests.length}</div>
+                <div className="text-2xl font-bold">{totalRequests}</div>
                 <p className="text-sm text-gray-600">Total Requests</p>
               </CardContent>
             </Card>
@@ -189,48 +296,38 @@ export default function UserRequestsPage() {
                             variant="outline"
                             size="sm"
                             onClick={() => handleApprove(request.id)}
+                            disabled={processingAction === request.id}
                             className="text-green-600 border-green-300 hover:bg-green-50"
                           >
-                            <Check className="h-4 w-4" />
+                            {processingAction === request.id ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                            ) : (
+                              <Check className="h-4 w-4" />
+                            )}
                           </Button>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleReject(request.id)}
+                            disabled={processingAction === request.id}
                             className="text-red-600 border-red-300 hover:bg-red-50"
                           >
-                            <X className="h-4 w-4" />
+                            {processingAction === request.id ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+                            ) : (
+                              <X className="h-4 w-4" />
+                            )}
                           </Button>
                         </div>
                       )}
-
-                      {request.status === "pending" && user?.role !== "superuser" && (
-                        <div className="flex items-center space-x-2 text-yellow-600">
-                          <Clock className="h-4 w-4" />
-                          <span className="text-sm">Awaiting Approval</span>
-                        </div>
-                      )}
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          alert(`Viewing details for request: ${request.userData.name}`)
-                        }}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
                     </div>
                   </div>
                 ))}
 
                 {filteredRequests.length === 0 && (
-                  <div className="text-center py-12 text-gray-500">
-                    <UserPlus className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No user requests found</p>
-                    {user?.role === "manager" && (
-                      <p className="text-sm mt-2">Click "Request New Cashier" to create your first request</p>
-                    )}
+                  <div className="text-center py-8 text-gray-500">
+                    <UserPlus className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p>No user requests found.</p>
                   </div>
                 )}
               </div>
