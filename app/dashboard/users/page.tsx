@@ -6,14 +6,86 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { mockUsers } from "@/lib/mockData"
+import { getApprovedUsers } from "@/lib/api"
 import { Plus, Search, Edit, Trash2, UserCheck, UserX } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+
+interface ApprovedUser {
+  id: string
+  name: string
+  email: string
+  status: string
+  created_at: string
+  updated_at: string
+  position: {
+    name: string
+  }
+  branch: {
+    id: string
+    name: string
+    location: string
+  }
+}
+
+interface ApprovedUsersResponse {
+  statistics: {
+    total_users: number
+    super_users: number
+    managers: number
+    cashiers: number
+  }
+  users: ApprovedUser[]
+}
 
 export default function UsersPage() {
-  const [users, setUsers] = useState(mockUsers)
+  const [approvedUsersData, setApprovedUsersData] = useState<ApprovedUsersResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
+  const router = useRouter()
+
+  useEffect(() => {
+    const fetchApprovedUsers = async () => {
+      try {
+        setLoading(true)
+        const response = await getApprovedUsers()
+        
+        if (response.error) {
+          console.error("Failed to fetch approved users:", response.error)
+          setError("Failed to load users data")
+        } else {
+          // Extract data from the nested response structure
+          setApprovedUsersData(response.data?.data || null)
+        }
+      } catch (err) {
+        console.error("Error fetching approved users:", err)
+        setError("Failed to load data")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchApprovedUsers()
+  }, [])
+
+  // Transform API data to match the expected format
+  const users = approvedUsersData?.users?.map((userData) => ({
+    id: userData.id,
+    name: userData.name,
+    email: userData.email,
+    username: userData.email.split("@")[0],
+    phone: "",
+    role: userData.position.name === "super user" ? "superuser" : userData.position.name as "manager" | "cashier",
+    locationId: userData.branch?.id || "",
+    locationName: userData.branch?.name || "",
+    status: userData.status as "active" | "inactive",
+    createdAt: userData.created_at,
+    lastLogin: undefined,
+    createdBy: "system",
+    createdByName: "System"
+  })) || []
 
   const filteredUsers = users.filter(
     (user) =>
@@ -25,16 +97,14 @@ export default function UsersPage() {
 
   const handleDelete = (id: string) => {
     if (confirm("Are you sure you want to delete this user?")) {
-      setUsers(users.filter((user) => user.id !== id))
+      // TODO: Implement API call to delete user
+      alert("User deletion would be implemented here")
     }
   }
 
   const handleToggleStatus = (id: string) => {
-    setUsers(
-      users.map((user) =>
-        user.id === id ? { ...user, status: user.status === "active" ? "inactive" : "active" } : user,
-      ),
-    )
+    // TODO: Implement API call to toggle user status
+    alert("User status toggle would be implemented here")
   }
 
   const getRoleColor = (role: string) => {
@@ -62,11 +132,36 @@ export default function UsersPage() {
     })
   }
 
+  // Use API statistics if available
+  const totalUsers = approvedUsersData?.statistics?.total_users || 0
+  const superUsers = approvedUsersData?.statistics?.super_users || 0
+  const managerUsers = approvedUsersData?.statistics?.managers || 0
+  const cashierUsers = approvedUsersData?.statistics?.cashiers || 0
   const activeUsers = users.filter((user) => user.status === "active").length
-  const totalUsers = users.length
-  const adminUsers = users.filter((user) => user.role === "superuser").length
-  const managerUsers = users.filter((user) => user.role === "manager").length
-  const cashierUsers = users.filter((user) => user.role === "cashier").length
+
+  if (loading) {
+    return (
+      <RoleBasedRoute allowedRoles={["superuser"]}>
+        <Layout title="User Management">
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        </Layout>
+      </RoleBasedRoute>
+    )
+  }
+
+  if (error) {
+    return (
+      <RoleBasedRoute allowedRoles={["superuser"]}>
+        <Layout title="User Management">
+          <div className="flex items-center justify-center h-64">
+            <p className="text-red-600">{error}</p>
+          </div>
+        </Layout>
+      </RoleBasedRoute>
+    )
+  }
 
   return (
     <RoleBasedRoute allowedRoles={["superuser"]}>
@@ -102,8 +197,8 @@ export default function UsersPage() {
             </Card>
             <Card>
               <CardContent className="p-4">
-                <div className="text-2xl font-bold text-red-600">{adminUsers}</div>
-                <p className="text-sm text-gray-600">Admins</p>
+                <div className="text-2xl font-bold text-red-600">{superUsers}</div>
+                <p className="text-sm text-gray-600">Super Users</p>
               </CardContent>
             </Card>
             <Card>
@@ -161,6 +256,7 @@ export default function UsersPage() {
                           <p className="font-semibold">{user.name}</p>
                           <p className="text-sm text-gray-600">{user.email}</p>
                           <p className="text-sm text-gray-500">@{user.username}</p>
+                          <p className="text-sm text-gray-500">Branch: {user.locationName}</p>
                         </div>
                       </div>
                       <div className="mt-2 flex items-center space-x-4 text-sm text-gray-600">
@@ -194,8 +290,7 @@ export default function UsersPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => {
-                            // Handle edit user
-                            alert(`Editing user: ${user.name}`)
+                            router.push(`/dashboard/users/${user.id}/edit`)
                           }}
                         >
                           <Edit className="h-4 w-4" />
@@ -204,7 +299,6 @@ export default function UsersPage() {
                           variant="destructive"
                           size="sm"
                           onClick={() => handleDelete(user.id)}
-                          disabled={user.role === "superuser"}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -212,6 +306,15 @@ export default function UsersPage() {
                     </div>
                   </div>
                 ))}
+
+                {filteredUsers.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <span className="text-gray-400 font-semibold">👥</span>
+                    </div>
+                    <p>No users found.</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
