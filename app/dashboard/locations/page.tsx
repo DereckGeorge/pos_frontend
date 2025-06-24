@@ -6,43 +6,127 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { mockLocations, mockUsers, mockSales, formatTSh } from "@/lib/mockData"
+import { formatTSh } from "@/lib/mockData"
+import { getBranches } from "@/lib/api"
 import { Plus, Search, Edit, Eye, MapPin, Users, DollarSign } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+
+interface Branch {
+  id: string
+  name: string
+  location: string
+  contact_number: string
+  is_active: boolean
+  manager: {
+    id: string
+    name: string
+    email: string
+    position_id: string
+    branch_id: string
+  } | null
+  total_sales: number
+  total_revenue: string | number
+  staff_count: number
+}
+
+interface BranchesResponse {
+  statistics: {
+    total_branches: number
+    active_branches: number
+    total_staff: number
+    total_revenue: number
+  }
+  branches: Branch[]
+}
 
 export default function LocationsPage() {
   const [searchTerm, setSearchTerm] = useState("")
+  const [branchesData, setBranchesData] = useState<BranchesResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
 
-  const filteredLocations = mockLocations.filter(
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        setLoading(true)
+        const response = await getBranches()
+        
+        if (response.error) {
+          console.error("Failed to fetch branches:", response.error)
+          setError("Failed to load branches data")
+        } else {
+          // Extract data from the nested response structure
+          setBranchesData(response.data?.data || null)
+        }
+      } catch (err) {
+        console.error("Error fetching branches:", err)
+        setError("Failed to load data")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchBranches()
+  }, [])
+
+  // Transform API data to match the expected format
+  const locations = branchesData?.branches?.map((branch) => ({
+    id: branch.id,
+    name: branch.name,
+    address: branch.location,
+    city: branch.location,
+    region: branch.location,
+    phone: branch.contact_number,
+    managerId: branch.manager?.id || "",
+    managerName: branch.manager?.name || "No Manager",
+    status: branch.is_active ? "active" : "inactive",
+    createdAt: new Date().toISOString(),
+    userCount: branch.staff_count,
+    salesCount: branch.total_sales,
+    totalSales: typeof branch.total_revenue === "string" ? parseFloat(branch.total_revenue) : branch.total_revenue,
+  })) || []
+
+  const filteredLocations = locations.filter(
     (location) =>
       location.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       location.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
       location.region.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  // Calculate statistics for each location
-  const locationsWithStats = filteredLocations.map((location) => {
-    const locationUsers = mockUsers.filter((user) => user.locationId === location.id && user.status === "active")
-    const locationSales = mockSales.filter((sale) => sale.locationId === location.id)
-    const totalSales = locationSales.reduce((sum, sale) => sum + sale.total, 0)
-
-    return {
-      ...location,
-      userCount: locationUsers.length,
-      salesCount: locationSales.length,
-      totalSales,
-    }
-  })
-
   const getStatusColor = (status: string) => {
     return status === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
   }
 
-  const totalLocations = mockLocations.length
-  const activeLocations = mockLocations.filter((loc) => loc.status === "active").length
-  const totalUsers = mockUsers.filter((user) => user.locationId).length
-  const totalSales = mockSales.reduce((sum, sale) => sum + sale.total, 0)
+  // Use API statistics if available
+  const totalLocations = branchesData?.statistics?.total_branches || 0
+  const activeLocations = branchesData?.statistics?.active_branches || 0
+  const totalUsers = branchesData?.statistics?.total_staff || 0
+  const totalSales = branchesData?.statistics?.total_revenue || 0
+
+  if (loading) {
+    return (
+      <RoleBasedRoute allowedRoles={["superuser"]}>
+        <Layout title="Location Management">
+          <div className="flex items-center justify-center h-64">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          </div>
+        </Layout>
+      </RoleBasedRoute>
+    )
+  }
+
+  if (error) {
+    return (
+      <RoleBasedRoute allowedRoles={["superuser"]}>
+        <Layout title="Location Management">
+          <div className="flex items-center justify-center h-64">
+            <p className="text-red-600">{error}</p>
+          </div>
+        </Layout>
+      </RoleBasedRoute>
+    )
+  }
 
   return (
     <RoleBasedRoute allowedRoles={["superuser"]}>
@@ -108,11 +192,11 @@ export default function LocationsPage() {
           {/* Locations List */}
           <Card>
             <CardHeader>
-              <CardTitle>All Locations ({locationsWithStats.length})</CardTitle>
+              <CardTitle>All Locations ({filteredLocations.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {locationsWithStats.map((location) => (
+                {filteredLocations.map((location) => (
                   <div
                     key={location.id}
                     className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50"
@@ -169,6 +253,13 @@ export default function LocationsPage() {
                     </div>
                   </div>
                 ))}
+
+                {filteredLocations.length === 0 && (
+                  <div className="text-center py-8 text-gray-500">
+                    <MapPin className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p>No locations found.</p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
