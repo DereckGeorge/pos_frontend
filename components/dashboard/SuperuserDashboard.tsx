@@ -4,32 +4,127 @@ import { Layout } from "@/components/common/Layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { mockLocations, mockUsers, mockSales, mockExpenses, mockUserRequests, formatTSh } from "@/lib/mockData"
+import { mockSales, mockExpenses, formatTSh } from "@/lib/mockData"
+import { getSuperuserDashboard, getPendingUsers } from "@/lib/api"
+import { useAuth } from "@/components/auth/AuthProvider"
 import { Building, Users, DollarSign, TrendingUp, MapPin, UserPlus, AlertCircle, Eye } from "lucide-react"
 import Link from "next/link"
+import { useState, useEffect } from "react"
+
+interface DashboardData {
+  total_branches: number
+  total_users: number
+  total_revenue: string
+  total_expenses: string
+  cost_of_goods_sold: string
+  gross_profit: number
+  net_profit: number
+  pending_users: number
+  branches: Array<{
+    id: string
+    name: string
+    location: string
+    contact_number: string
+    is_active: boolean
+    manager: {
+      id: string
+      name: string
+      email: string
+      position_id: string
+      branch_id: string
+    } | null
+    total_sales: number
+    total_revenue: string | number
+  }>
+}
+
+interface PendingUsersData {
+  statistics: {
+    total_requests: number
+    approved: number
+    rejected: number
+    pending: number
+  }
+  users: Array<{
+    id: string
+    name: string
+    email: string
+    status: string
+    position: {
+      name: string
+    }
+    branch: {
+      name: string
+      location: string
+    }
+  }>
+}
 
 export function SuperuserDashboard() {
-  // Calculate overall statistics
-  const totalLocations = mockLocations.filter((loc) => loc.status === "active").length
-  const totalUsers = mockUsers.filter((user) => user.status === "active").length
-  const totalSales = mockSales.reduce((sum, sale) => sum + sale.total, 0)
-  const totalExpenses = mockExpenses.reduce((sum, expense) => sum + expense.amount, 0)
-  const netProfit = totalSales - totalExpenses
-  const pendingRequests = mockUserRequests.filter((req) => req.status === "pending").length
+  const { user } = useAuth()
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
+  const [pendingUsersData, setPendingUsersData] = useState<PendingUsersData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
 
-  // Sales by location
-  const salesByLocation = mockLocations.map((location) => {
-    const locationSales = mockSales.filter((sale) => sale.locationId === location.id)
-    const totalSales = locationSales.reduce((sum, sale) => sum + sale.total, 0)
-    const salesCount = locationSales.length
-    return {
-      ...location,
-      totalSales,
-      salesCount,
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true)
+        
+        // Fetch dashboard data
+        const dashboardResponse = await getSuperuserDashboard()
+        if (dashboardResponse.error) {
+          console.error("Failed to fetch dashboard data:", dashboardResponse.error)
+          setError("Failed to load dashboard data")
+        } else {
+          // Extract data from the nested response structure
+          setDashboardData(dashboardResponse.data?.data || null)
+        }
+
+        // Fetch pending users data
+        const pendingUsersResponse = await getPendingUsers()
+        if (pendingUsersResponse.error) {
+          console.error("Failed to fetch pending users:", pendingUsersResponse.error)
+        } else {
+          // Extract data from the nested response structure
+          setPendingUsersData(pendingUsersResponse.data?.data || null)
+        }
+      } catch (err) {
+        console.error("Error fetching data:", err)
+        setError("Failed to load data")
+      } finally {
+        setLoading(false)
+      }
     }
-  })
 
-  // Recent activities across all locations
+    fetchData()
+  }, [])
+
+  // Use API data if available, otherwise fall back to mock data
+  const totalLocations = dashboardData?.total_branches || 0
+  const totalUsers = dashboardData?.total_users || 0
+  const totalSales = dashboardData ? parseFloat(dashboardData.total_revenue) : mockSales.reduce((sum, sale) => sum + sale.total, 0)
+  const totalExpenses = dashboardData ? parseFloat(dashboardData.total_expenses) : mockExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+  const netProfit = dashboardData?.net_profit || (totalSales - totalExpenses)
+  const pendingRequests = pendingUsersData?.statistics?.pending || 0
+
+  // Sales by location from API data
+  const salesByLocation = dashboardData?.branches?.map((branch) => ({
+    id: branch.id,
+    name: branch.name,
+    city: branch.location,
+    region: branch.location,
+    phone: branch.contact_number,
+    managerId: branch.manager?.id || "",
+    managerName: branch.manager?.name || "No Manager",
+    status: branch.is_active ? "active" : "inactive",
+    createdAt: new Date().toISOString(),
+    totalSales: typeof branch.total_revenue === "string" ? parseFloat(branch.total_revenue) : branch.total_revenue,
+    salesCount: branch.total_sales,
+  })) || []
+
+  // Recent activities (keep mock data for now as API doesn't provide this)
   const recentActivities = [
     ...mockSales.slice(0, 3).map((sale) => ({
       type: "sale",
@@ -47,12 +142,32 @@ export function SuperuserDashboard() {
     })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
 
+  if (loading) {
+    return (
+      <Layout title="Superuser Dashboard">
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      </Layout>
+    )
+  }
+
+  if (error) {
+    return (
+      <Layout title="Superuser Dashboard">
+        <div className="flex items-center justify-center h-64">
+          <p className="text-red-600">{error}</p>
+        </div>
+      </Layout>
+    )
+  }
+
   return (
     <Layout title="Superuser Dashboard">
       <div className="space-y-6">
         {/* Welcome Section */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 rounded-lg">
-          <h2 className="text-2xl font-bold mb-2">Karibu, Mohamed Rashid!</h2>
+          <h2 className="text-2xl font-bold mb-2">Karibu, {user?.name || "User"}!</h2>
           <p className="text-blue-100">Overview of all POS Tanzania locations</p>
         </div>
 
