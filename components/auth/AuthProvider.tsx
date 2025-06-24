@@ -2,15 +2,30 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
-import { mockUsers, mockLocations } from "@/lib/mockData"
 import type { User, Location } from "@/lib/mockData"
+import { login as apiLogin } from "@/lib/api"
 
 interface AuthContextType {
   user: User | null
   userLocation: Location | null
-  login: (username: string, password: string) => Promise<boolean>
+  login: (email: string, password: string) => Promise<boolean>
   logout: () => void
   loading: boolean
+}
+
+interface ApiUser {
+  id: string
+  name: string
+  email: string
+  position: string
+  created_at: string
+  updated_at: string
+}
+
+interface LoginResponse {
+  user: ApiUser
+  access_token: string
+  token_type: string
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -26,38 +41,86 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const userData = localStorage.getItem("pos_user")
 
     if (token && userData) {
-      const parsedUser = JSON.parse(userData)
-      setUser(parsedUser)
+      try {
+        const parsedUser = JSON.parse(userData)
+        setUser(parsedUser)
 
-      // Set user location if they have one
-      if (parsedUser.locationId) {
-        const location = mockLocations.find((loc) => loc.id === parsedUser.locationId)
-        setUserLocation(location || null)
+        // Set user location if they have one
+        if (parsedUser.locationId) {
+          // For now, we'll set a default location since the API doesn't provide location info
+          setUserLocation({
+            id: "default",
+            name: "Main Store",
+            address: "Dar es Salaam, Tanzania",
+            city: "Dar es Salaam",
+            region: "Dar es Salaam",
+            phone: "+255 123 456 789",
+            managerId: "default",
+            managerName: "Default Manager",
+            status: "active",
+            createdAt: new Date().toISOString()
+          })
+        }
+      } catch (error) {
+        console.error("Error parsing stored user data:", error)
+        localStorage.removeItem("pos_token")
+        localStorage.removeItem("pos_user")
       }
     }
     setLoading(false)
   }, [])
 
-  const login = async (username: string, password: string): Promise<boolean> => {
-    // Mock authentication - in real app, this would call your API
-    const foundUser = mockUsers.find((u) => u.username === username && u.status === "active")
-
-    if (foundUser && password === "password") {
-      const token = `mock_jwt_token_${foundUser.id}`
-      localStorage.setItem("pos_token", token)
-      localStorage.setItem("pos_user", JSON.stringify(foundUser))
-      setUser(foundUser)
-
-      // Set user location
-      if (foundUser.locationId) {
-        const location = mockLocations.find((loc) => loc.id === foundUser.locationId)
-        setUserLocation(location || null)
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      const response = await apiLogin(email, password)
+      
+      if (response.error) {
+        console.error("Login failed:", response.error)
+        return false
       }
 
-      return true
-    }
+      const data = response.data as LoginResponse
 
-    return false
+      // Transform API user data to match our User interface
+      const transformedUser: User = {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        username: data.user.email.split("@")[0], // Use email prefix as username
+        role: data.user.position === "super user" ? "superuser" : (data.user.position as "manager" | "cashier"),
+        status: "active",
+        createdAt: data.user.created_at,
+        lastLogin: new Date().toISOString(),
+        locationId: "default", // Default location for now
+        phone: "", // API doesn't provide phone
+        createdBy: "system",
+        createdByName: "System"
+      }
+
+      // Store token and user data
+      localStorage.setItem("pos_token", data.access_token)
+      localStorage.setItem("pos_user", JSON.stringify(transformedUser))
+      setUser(transformedUser)
+
+      // Set default location
+      setUserLocation({
+        id: "default",
+        name: "Main Store",
+        address: "Dar es Salaam, Tanzania",
+        city: "Dar es Salaam",
+        region: "Dar es Salaam",
+        phone: "+255 123 456 789",
+        managerId: "default",
+        managerName: "Default Manager",
+        status: "active",
+        createdAt: new Date().toISOString()
+      })
+
+      return true
+    } catch (error) {
+      console.error("Login error:", error)
+      return false
+    }
   }
 
   const logout = () => {

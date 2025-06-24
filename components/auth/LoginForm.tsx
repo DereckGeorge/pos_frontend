@@ -13,7 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, LogIn } from "lucide-react"
 
 export function LoginForm() {
-  const [username, setUsername] = useState("")
+  const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
@@ -27,11 +27,11 @@ export function LoginForm() {
     setError("")
 
     try {
-      const success = await login(username, password)
+      const success = await login(email, password)
       if (success) {
         router.push("/dashboard")
       } else {
-        setError("Invalid username or password")
+        setError("Invalid email or password")
       }
     } catch (err) {
       setError("Login failed. Please try again.")
@@ -49,13 +49,13 @@ export function LoginForm() {
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
+            <Label htmlFor="email">Email</Label>
             <Input
-              id="username"
-              type="text"
-              placeholder="Enter username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              id="email"
+              type="email"
+              placeholder="Enter your email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>
@@ -103,14 +103,15 @@ export function LoginForm() {
           <p className="text-sm font-medium text-gray-700 mb-2">Demo Credentials:</p>
           <div className="space-y-1 text-xs text-gray-600">
             <p>
-              <strong>Superuser:</strong> username: superuser, password: password
+              <strong>Superuser:</strong> super.admin@poanamanga.com
             </p>
             <p>
-              <strong>Manager (Dar):</strong> username: manager_dar, password: password
+              <strong>Manager:</strong> usermanager@example.com
             </p>
             <p>
-              <strong>Cashier (Dar):</strong> username: cashier_dar_1, password: password
+              <strong>Cashier:</strong> usercashier@example.com
             </p>
+            <p className="text-xs text-gray-500 mt-2">Password: SuperAdmin@123 (for superuser)</p>
           </div>
         </div>
       </CardContent>
