@@ -4,13 +4,42 @@ import { Layout } from "@/components/common/Layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { mockSales } from "@/lib/mockData"
 import { Eye, Plus, Receipt } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
+import { getSales } from "@/lib/api"
 
 export default function SalesPage() {
   const router = useRouter()
+
+  const [sales, setSales] = useState<any[]>([])
+  const [stats, setStats] = useState({ total_sales: 0, total_amount: 0, average_sale: 0 })
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    fetchSales()
+  }, [])
+
+  const fetchSales = async () => {
+    try {
+      setLoading(true)
+      setError("")
+      const response = await getSales()
+      if (response.error) {
+        setError(response.error)
+        return
+      }
+      setSales(response.data.data.sales)
+      setStats(response.data.data.statistics)
+    } catch (err) {
+      setError("Failed to fetch sales data")
+      console.error("Error fetching sales data:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -35,6 +64,31 @@ export default function SalesPage() {
     }
   }
 
+  if (loading) {
+    return (
+      <Layout title="Sales Management">
+        <div className="flex items-center justify-center h-64">
+          <div className="flex items-center space-x-2">
+            <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></span>
+            <span>Loading sales data...</span>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
+  if (error) {
+    return (
+      <Layout title="Sales Management">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={fetchSales}>Retry</Button>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
+
   return (
     <Layout title="Sales Management">
       <div className="space-y-6">
@@ -56,14 +110,14 @@ export default function SalesPage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold">{mockSales.length}</div>
+              <div className="text-2xl font-bold">{stats.total_sales}</div>
               <p className="text-sm text-gray-600">Total Sales</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <div className="text-2xl font-bold">
-                ${mockSales.reduce((sum, sale) => sum + sale.total, 0).toFixed(2)}
+                {parseFloat(stats.total_amount?.toString() || "0").toLocaleString()} TSh
               </div>
               <p className="text-sm text-gray-600">Total Revenue</p>
             </CardContent>
@@ -71,14 +125,14 @@ export default function SalesPage() {
           <Card>
             <CardContent className="p-4">
               <div className="text-2xl font-bold">
-                ${(mockSales.reduce((sum, sale) => sum + sale.total, 0) / mockSales.length).toFixed(2)}
+                {parseFloat(stats.average_sale?.toString() || "0").toLocaleString()} TSh
               </div>
               <p className="text-sm text-gray-600">Average Sale</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold">{mockSales.filter((sale) => sale.status === "completed").length}</div>
+              <div className="text-2xl font-bold">{sales.filter((sale) => sale.status === "completed").length}</div>
               <p className="text-sm text-gray-600">Completed</p>
             </CardContent>
           </Card>
@@ -91,7 +145,7 @@ export default function SalesPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {mockSales.map((sale) => (
+              {sales.map((sale: any) => (
                 <div
                   key={sale.id}
                   className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer"
@@ -101,19 +155,19 @@ export default function SalesPage() {
                     <div className="flex items-center space-x-3">
                       <div>
                         <p className="font-semibold">{sale.id}</p>
-                        <p className="text-sm text-gray-600">{sale.customerName || "Walk-in Customer"}</p>
+                        <p className="text-sm text-gray-600">{sale.branch?.name || "-"}</p>
                       </div>
                     </div>
                     <div className="mt-2">
                       <p className="text-sm text-gray-600">
-                        {sale.items.length} item(s) • {formatDate(sale.createdAt)}
+                        {sale.items.length} item(s) • {formatDate(sale.created_at)}
                       </p>
-                      <p className="text-sm text-gray-600">Cashier: {sale.cashierName}</p>
+                      <p className="text-sm text-gray-600">Cashier: {sale.cashier?.name}</p>
                     </div>
                   </div>
 
                   <div className="text-right">
-                    <p className="text-lg font-semibold">${sale.total.toFixed(2)}</p>
+                    <p className="text-lg font-semibold">{parseFloat(sale.total_amount).toLocaleString()} TSh</p>
                     <Badge className={getStatusColor(sale.status)}>{sale.status}</Badge>
                   </div>
 

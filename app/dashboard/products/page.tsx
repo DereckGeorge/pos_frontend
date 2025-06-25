@@ -5,26 +5,137 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { mockProducts } from "@/lib/mockData"
-import { Plus, Search, Edit, Trash2, AlertTriangle } from "lucide-react"
+import { getProducts, deleteProduct } from "@/lib/api"
+import { Plus, Search, Edit, Trash2, AlertTriangle, Loader2 } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { EditProductForm } from "@/components/products/EditProductForm"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+
+interface ApiProduct {
+  id: string
+  name: string
+  code: string
+  description: string
+  price: string
+  cost_price: string
+  quantity: number
+  reorder_level: number
+  unit: string
+  category: string
+  branch_id: string
+  created_by: string
+  updated_by: string
+  created_at: string
+  updated_at: string
+  deleted_at: string | null
+  profit: number
+  branch: {
+    id: string
+    name: string
+    location: string
+    contact_number: string
+    is_active: boolean
+    created_at: string
+    updated_at: string
+  }
+}
+
+interface ApiResponse {
+  success: boolean
+  message: string
+  data: {
+    statistics: {
+      total_products: number
+      out_of_stock_products: number
+      low_stock_products: number
+      inventory_value: number
+    }
+    products: ApiProduct[]
+  }
+}
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState(mockProducts)
+  const [products, setProducts] = useState<ApiProduct[]>([])
+  const [statistics, setStatistics] = useState({
+    total_products: 0,
+    out_of_stock_products: 0,
+    low_stock_products: 0,
+    inventory_value: 0
+  })
   const [searchTerm, setSearchTerm] = useState("")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [editingProduct, setEditingProduct] = useState<ApiProduct | null>(null)
+  const [deletingProduct, setDeletingProduct] = useState<ApiProduct | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  useEffect(() => {
+    fetchProducts()
+  }, [])
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true)
+      setError("")
+      const response = await getProducts()
+      
+      if (response.error) {
+        setError(response.error)
+        return
+      }
+
+      const data = response.data as ApiResponse
+      setProducts(data.data.products)
+      setStatistics(data.data.statistics)
+    } catch (err) {
+      setError("Failed to fetch products")
+      console.error("Error fetching products:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const filteredProducts = products.filter(
     (product) =>
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.barcode.includes(searchTerm),
+      product.code.includes(searchTerm),
   )
 
   const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this product?")) {
-      setProducts(products.filter((product) => product.id !== id))
+    const product = products.find(p => p.id === id)
+    if (product) {
+      setDeletingProduct(product)
     }
+  }
+
+  const confirmDelete = async () => {
+    if (!deletingProduct) return
+    
+    setDeleteLoading(true)
+    try {
+      const response = await deleteProduct(deletingProduct.id)
+      
+      if (response.error) {
+        console.error("Error deleting product:", response.error)
+        // You could show an error message here
+        return
+      }
+
+      // Remove the product from the local state
+      setProducts(products.filter(product => product.id !== deletingProduct.id))
+      setDeletingProduct(null)
+    } catch (error) {
+      console.error("Error deleting product:", error)
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
+  const handleEditSuccess = () => {
+    setEditingProduct(null)
+    fetchProducts() // Refresh the products list
   }
 
   const getStockStatus = (stock: number, minStock: number) => {
@@ -47,10 +158,33 @@ export default function ProductsPage() {
     return colors[category] || "bg-gray-100 text-gray-800"
   }
 
-  const totalProducts = products.length
-  const totalValue = products.reduce((sum, product) => sum + product.price * product.stock, 0)
-  const lowStockProducts = products.filter((product) => product.stock <= product.minStock)
-  const outOfStockProducts = products.filter((product) => product.stock === 0)
+  const lowStockProducts = products.filter((product) => product.quantity <= product.reorder_level)
+
+  if (loading) {
+    return (
+      <Layout title="Product Management">
+        <div className="flex items-center justify-center h-64">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span>Loading products...</span>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
+
+  if (error) {
+    return (
+      <Layout title="Product Management">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={fetchProducts}>Retry</Button>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
 
   return (
     <Layout title="Product Management">
@@ -73,25 +207,25 @@ export default function ProductsPage() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold">{totalProducts}</div>
+              <div className="text-2xl font-bold">{statistics.total_products}</div>
               <p className="text-sm text-gray-600">Total Products</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold">${totalValue.toFixed(2)}</div>
+              <div className="text-2xl font-bold">TSh {statistics.inventory_value.toLocaleString()}</div>
               <p className="text-sm text-gray-600">Inventory Value</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-orange-600">{lowStockProducts.length}</div>
+              <div className="text-2xl font-bold text-orange-600">{statistics.low_stock_products}</div>
               <p className="text-sm text-gray-600">Low Stock</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-red-600">{outOfStockProducts.length}</div>
+              <div className="text-2xl font-bold text-red-600">{statistics.out_of_stock_products}</div>
               <p className="text-sm text-gray-600">Out of Stock</p>
             </CardContent>
           </Card>
@@ -103,7 +237,7 @@ export default function ProductsPage() {
             <div className="relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
               <Input
-                placeholder="Search products by name, category, or barcode..."
+                placeholder="Search products by name, category, or code..."
                 className="pl-10"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -127,7 +261,7 @@ export default function ProductsPage() {
                   <div key={product.id} className="p-3 bg-white rounded-lg border">
                     <p className="font-medium">{product.name}</p>
                     <p className="text-sm text-gray-600">
-                      Stock: {product.stock} / Min: {product.minStock}
+                      Stock: {product.quantity} / Min: {product.reorder_level}
                     </p>
                   </div>
                 ))}
@@ -144,7 +278,7 @@ export default function ProductsPage() {
           <CardContent>
             <div className="space-y-4">
               {filteredProducts.map((product) => {
-                const stockStatus = getStockStatus(product.stock, product.minStock)
+                const stockStatus = getStockStatus(product.quantity, product.reorder_level)
                 return (
                   <div
                     key={product.id}
@@ -158,20 +292,21 @@ export default function ProductsPage() {
                           <div className="flex items-center space-x-2 mt-1">
                             <Badge className={getCategoryColor(product.category)}>{product.category}</Badge>
                             <Badge className={stockStatus.color}>{stockStatus.label}</Badge>
+                            <Badge variant="outline">{product.branch.name}</Badge>
                           </div>
                         </div>
                       </div>
                       <div className="mt-2 text-sm text-gray-600">
-                        <span>Barcode: {product.barcode}</span>
-                        <span className="ml-4">Stock: {product.stock}</span>
-                        <span className="ml-4">Min Stock: {product.minStock}</span>
+                        <span>Code: {product.code}</span>
+                        <span className="ml-4">Stock: {product.quantity} {product.unit}</span>
+                        <span className="ml-4">Min Stock: {product.reorder_level}</span>
                       </div>
                     </div>
 
                     <div className="text-right mr-4">
-                      <p className="text-lg font-semibold">${product.price}</p>
-                      <p className="text-sm text-gray-600">Cost: ${product.cost}</p>
-                      <p className="text-sm text-gray-600">Profit: ${(product.price - product.cost).toFixed(2)}</p>
+                      <p className="text-lg font-semibold">TSh {parseFloat(product.price).toLocaleString()}</p>
+                      <p className="text-sm text-gray-600">Cost: TSh {parseFloat(product.cost_price).toLocaleString()}</p>
+                      <p className="text-sm text-green-600">Profit: TSh {product.profit.toLocaleString()}</p>
                     </div>
 
                     <div className="flex space-x-2">
@@ -180,7 +315,7 @@ export default function ProductsPage() {
                         size="sm"
                         onClick={() => {
                           // Handle edit product
-                          alert(`Editing product: ${product.name}`)
+                          setEditingProduct(product)
                         }}
                       >
                         <Edit className="h-4 w-4" />
@@ -196,6 +331,27 @@ export default function ProductsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Edit Product Form */}
+      {editingProduct && (
+        <EditProductForm
+          product={editingProduct}
+          onClose={() => setEditingProduct(null)}
+          onSuccess={handleEditSuccess}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={!!deletingProduct}
+        onClose={() => setDeletingProduct(null)}
+        onConfirm={confirmDelete}
+        title="Delete Product"
+        message={`Are you sure you want to delete "${deletingProduct?.name}"? This action cannot be undone.`}
+        confirmText="Delete Product"
+        cancelText="Cancel"
+        loading={deleteLoading}
+      />
     </Layout>
   )
 }

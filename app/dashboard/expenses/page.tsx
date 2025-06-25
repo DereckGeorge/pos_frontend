@@ -4,13 +4,98 @@ import { Layout } from "@/components/common/Layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { mockExpenses, expenseCategories } from "@/lib/mockData"
-import { Plus, Eye, Edit, Trash2 } from "lucide-react"
+import { getExpenseStatistics } from "@/lib/api"
+import { Plus, Eye, Edit, Trash2, Loader2, FolderPlus, FolderOpen } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { AddExpenseCategoryForm } from "@/components/expenses/AddExpenseCategoryForm"
+
+interface ApiExpense {
+  id: string
+  amount: string
+  description: string
+  expense_date: string
+  created_at: string
+  payment_method: string
+  receipt_number: string
+  category: {
+    id: string
+    name: string
+  }
+  branch: {
+    id: string
+    name: string
+  }
+  creator: {
+    id: string
+    name: string
+    email: string
+    position: string
+  }
+}
+
+interface ApiExpenseStatistics {
+  success: boolean
+  message: string
+  data: {
+    overview: {
+      total_expenses: number
+      total_amount: string
+      average_amount: string
+      total_categories: number
+    }
+    category_totals: Array<{
+      category_name: string
+      total_amount: string | number
+      expense_count: number
+    }>
+    recent_expenses: ApiExpense[]
+  }
+}
 
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState(mockExpenses)
+  const [expenses, setExpenses] = useState<ApiExpense[]>([])
+  const [statistics, setStatistics] = useState({
+    total_expenses: 0,
+    total_amount: "0",
+    average_amount: "0",
+    total_categories: 0
+  })
+  const [categoryTotals, setCategoryTotals] = useState<Array<{
+    category_name: string
+    total_amount: string | number
+    expense_count: number
+  }>>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [showAddCategory, setShowAddCategory] = useState(false)
+
+  useEffect(() => {
+    fetchExpenseStatistics()
+  }, [])
+
+  const fetchExpenseStatistics = async () => {
+    try {
+      setLoading(true)
+      setError("")
+      const response = await getExpenseStatistics()
+      
+      if (response.error) {
+        setError(response.error)
+        return
+      }
+
+      const data = response.data as ApiExpenseStatistics
+      setExpenses(data.data.recent_expenses)
+      setStatistics(data.data.overview)
+      setCategoryTotals(data.data.category_totals.filter(cat => cat.expense_count > 0))
+    } catch (err) {
+      setError("Failed to fetch expense statistics")
+      console.error("Error fetching expense statistics:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString("en-US", {
@@ -33,6 +118,10 @@ export default function ExpensesPage() {
       "Food & Beverages": "bg-pink-100 text-pink-800",
       "Professional Services": "bg-teal-100 text-teal-800",
       Insurance: "bg-cyan-100 text-cyan-800",
+      Salaries: "bg-yellow-100 text-yellow-800",
+      Rent: "bg-gray-100 text-gray-800",
+      Transportation: "bg-indigo-100 text-indigo-800",
+      Miscellaneous: "bg-gray-100 text-gray-800",
       Other: "bg-gray-100 text-gray-800",
     }
     return colors[category] || "bg-gray-100 text-gray-800"
@@ -44,14 +133,37 @@ export default function ExpensesPage() {
     }
   }
 
-  const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0)
-  const expensesByCategory = expenseCategories
-    .map((category) => ({
-      category,
-      amount: expenses.filter((e) => e.category === category).reduce((sum, e) => sum + e.amount, 0),
-      count: expenses.filter((e) => e.category === category).length,
-    }))
-    .filter((item) => item.count > 0)
+  const handleCategorySuccess = () => {
+    setShowAddCategory(false)
+    // Optionally refresh the expense statistics to show new categories
+    fetchExpenseStatistics()
+  }
+
+  if (loading) {
+    return (
+      <Layout title="Expense Management">
+        <div className="flex items-center justify-center h-64">
+          <div className="flex items-center space-x-2">
+            <Loader2 className="h-6 w-6 animate-spin" />
+            <span>Loading expense statistics...</span>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
+
+  if (error) {
+    return (
+      <Layout title="Expense Management">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={fetchExpenseStatistics}>Retry</Button>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
 
   return (
     <Layout title="Expense Management">
@@ -62,37 +174,49 @@ export default function ExpensesPage() {
             <h2 className="text-2xl font-bold">Expenses</h2>
             <p className="text-gray-600">Track and manage business expenses</p>
           </div>
-          <Link href="/dashboard/expenses/new">
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Expense
+          <div className="flex space-x-2">
+            <Button variant="outline" onClick={() => setShowAddCategory(true)}>
+              <FolderPlus className="h-4 w-4 mr-2" />
+              Add Category
             </Button>
-          </Link>
+            <Link href="/dashboard/expenses/categories">
+              <Button variant="outline">
+                <FolderOpen className="h-4 w-4 mr-2" />
+                View Categories
+              </Button>
+            </Link>
+            <Link href="/dashboard/expenses/new">
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Expense
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Expense Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold">{expenses.length}</div>
+              <div className="text-2xl font-bold">{statistics.total_expenses}</div>
               <p className="text-sm text-gray-600">Total Expenses</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold">${totalExpenses.toFixed(2)}</div>
+              <div className="text-2xl font-bold">TSh {parseFloat(statistics.total_amount).toLocaleString()}</div>
               <p className="text-sm text-gray-600">Total Amount</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold">${(totalExpenses / expenses.length).toFixed(2)}</div>
+              <div className="text-2xl font-bold">TSh {parseFloat(statistics.average_amount).toLocaleString()}</div>
               <p className="text-sm text-gray-600">Average Expense</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold">{expensesByCategory.length}</div>
+              <div className="text-2xl font-bold">{statistics.total_categories}</div>
               <p className="text-sm text-gray-600">Categories</p>
             </CardContent>
           </Card>
@@ -105,13 +229,13 @@ export default function ExpensesPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {expensesByCategory.map((item) => (
-                <div key={item.category} className="p-4 border rounded-lg">
+              {categoryTotals.map((item) => (
+                <div key={item.category_name} className="p-4 border rounded-lg">
                   <div className="flex items-center justify-between mb-2">
-                    <Badge className={getCategoryColor(item.category)}>{item.category}</Badge>
-                    <span className="text-sm text-gray-600">{item.count} items</span>
+                    <Badge className={getCategoryColor(item.category_name)}>{item.category_name}</Badge>
+                    <span className="text-sm text-gray-600">{item.expense_count} items</span>
                   </div>
-                  <div className="text-xl font-semibold">${item.amount.toFixed(2)}</div>
+                  <div className="text-xl font-semibold">TSh {typeof item.total_amount === 'string' ? parseFloat(item.total_amount).toLocaleString() : item.total_amount.toLocaleString()}</div>
                 </div>
               ))}
             </div>
@@ -135,16 +259,16 @@ export default function ExpensesPage() {
                       <div>
                         <p className="font-semibold">{expense.description}</p>
                         <p className="text-sm text-gray-600">
-                          {expense.createdByName} • {formatDate(expense.date)}
+                          {expense.creator.name} • {formatDate(expense.expense_date)}
                         </p>
-                        {expense.notes && <p className="text-sm text-gray-500 mt-1">{expense.notes}</p>}
+                        <p className="text-sm text-gray-500 mt-1">{expense.branch.name} • {expense.payment_method}</p>
                       </div>
                     </div>
                   </div>
 
                   <div className="text-right mr-4">
-                    <p className="text-lg font-semibold">${expense.amount.toFixed(2)}</p>
-                    <Badge className={getCategoryColor(expense.category)}>{expense.category}</Badge>
+                    <p className="text-lg font-semibold">TSh {parseFloat(expense.amount).toLocaleString()}</p>
+                    <Badge className={getCategoryColor(expense.category.name)}>{expense.category.name}</Badge>
                   </div>
 
                   <div className="flex space-x-2">
@@ -178,6 +302,14 @@ export default function ExpensesPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Add Expense Category Form */}
+      {showAddCategory && (
+        <AddExpenseCategoryForm
+          onClose={() => setShowAddCategory(false)}
+          onSuccess={handleCategorySuccess}
+        />
+      )}
     </Layout>
   )
 }
