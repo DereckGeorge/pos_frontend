@@ -5,12 +5,65 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ShoppingCart, DollarSign, Receipt, Clock } from "lucide-react"
 import Link from "next/link"
+import { useEffect, useState } from "react"
+import { getSales } from "@/lib/api"
 
 export function CashierDashboard() {
-  const todayStats = {
-    salesCount: 23,
-    totalAmount: 1250.75,
-    lastSale: "2 minutes ago",
+  const [stats, setStats] = useState({ total_sales: 0, total_amount: 0, average_sale: 0 })
+  const [sales, setSales] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    fetchSales()
+  }, [])
+
+  const fetchSales = async () => {
+    try {
+      setLoading(true)
+      setError("")
+      const response = await getSales()
+      if (response.error) {
+        setError(response.error)
+        return
+      }
+      setStats(response.data.data.statistics)
+      setSales(response.data.data.sales)
+    } catch (err) {
+      setError("Failed to fetch sales data")
+      console.error("Error fetching sales data:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Find the most recent sale
+  const lastSale = sales.length > 0 ? sales[0] : null
+  const lastSaleTime = lastSale ? new Date(lastSale.created_at).toLocaleString() : "-"
+
+  if (loading) {
+    return (
+      <Layout title="Cashier Dashboard">
+        <div className="flex items-center justify-center h-64">
+          <div className="flex items-center space-x-2">
+            <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></span>
+            <span>Loading sales data...</span>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
+  if (error) {
+    return (
+      <Layout title="Cashier Dashboard">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={fetchSales}>Retry</Button>
+          </div>
+        </div>
+      </Layout>
+    )
   }
 
   return (
@@ -24,7 +77,7 @@ export function CashierDashboard() {
               <ShoppingCart className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{todayStats.salesCount}</div>
+              <div className="text-2xl font-bold">{stats.total_sales}</div>
               <p className="text-xs text-muted-foreground">transactions</p>
             </CardContent>
           </Card>
@@ -35,7 +88,7 @@ export function CashierDashboard() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${todayStats.totalAmount}</div>
+              <div className="text-2xl font-bold">{parseFloat(stats.total_amount?.toString() || "0").toLocaleString()} TSh</div>
               <p className="text-xs text-muted-foreground">today's revenue</p>
             </CardContent>
           </Card>
@@ -46,7 +99,7 @@ export function CashierDashboard() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{todayStats.lastSale}</div>
+              <div className="text-2xl font-bold">{lastSaleTime}</div>
               <p className="text-xs text-muted-foreground">most recent</p>
             </CardContent>
           </Card>
@@ -90,18 +143,13 @@ export function CashierDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {[
-                { time: "2 min ago", action: "Sale completed", amount: "$45.99" },
-                { time: "15 min ago", action: "Sale completed", amount: "$123.50" },
-                { time: "32 min ago", action: "Expense recorded", amount: "$25.00" },
-                { time: "1 hour ago", action: "Sale completed", amount: "$89.75" },
-              ].map((activity, index) => (
+              {sales.slice(0, 5).map((sale: any, index: number) => (
                 <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div>
-                    <p className="font-medium">{activity.action}</p>
-                    <p className="text-sm text-muted-foreground">{activity.time}</p>
+                    <p className="font-medium">Sale completed</p>
+                    <p className="text-sm text-muted-foreground">{new Date(sale.created_at).toLocaleString()}</p>
                   </div>
-                  <div className="font-medium">{activity.amount}</div>
+                  <div className="font-medium">{parseFloat(sale.total_amount).toLocaleString()} TSh</div>
                 </div>
               ))}
             </div>

@@ -5,47 +5,88 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/components/auth/AuthProvider"
-import { mockSales, mockExpenses, mockLocationStock, mockStockTransfers, formatTSh } from "@/lib/mockData"
 import { DollarSign, Package, ShoppingCart, TrendingUp, AlertTriangle, ArrowLeftRight, UserPlus } from "lucide-react"
 import Link from "next/link"
+import { useEffect, useState } from "react"
+import { getManagerDashboardOverview } from "@/lib/api"
 
 export function ManagerDashboard() {
   const { user, userLocation } = useAuth()
+  const [dashboardData, setDashboardData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    if (!user || !userLocation) return
+    fetchDashboardData()
+  }, [user, userLocation])
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true)
+      setError("")
+      const response = await getManagerDashboardOverview()
+      if (response.error) {
+        setError(response.error)
+        return
+      }
+      setDashboardData(response.data.data)
+    } catch (err) {
+      setError("Failed to fetch dashboard data")
+      console.error("Error fetching dashboard data:", err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   if (!user || !userLocation) return null
 
-  // Filter data for current location
-  const locationSales = mockSales.filter((sale) => sale.locationId === user.locationId)
-  const locationExpenses = mockExpenses.filter((expense) => expense.locationId === user.locationId)
-  const locationStock = mockLocationStock.filter((stock) => stock.locationId === user.locationId)
-  const pendingTransfers = mockStockTransfers.filter(
-    (transfer) =>
-      (transfer.fromLocationId === user.locationId || transfer.toLocationId === user.locationId) &&
-      transfer.status === "pending",
-  )
+  if (loading) {
+    return (
+      <Layout title={`Manager Dashboard - ${userLocation.name}`}>
+        <div className="flex items-center justify-center h-64">
+          <div className="flex items-center space-x-2">
+            <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></span>
+            <span>Loading dashboard data...</span>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
+  if (error) {
+    return (
+      <Layout title={`Manager Dashboard - ${userLocation.name}`}>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={fetchDashboardData}>Retry</Button>
+          </div>
+        </div>
+      </Layout>
+    )
+  }
+  if (!dashboardData) return null
 
-  // Calculate statistics
-  const totalSales = locationSales.reduce((sum, sale) => sum + sale.total, 0)
-  const totalExpenses = locationExpenses.reduce((sum, expense) => sum + expense.amount, 0)
-  const profit = totalSales - totalExpenses
-  const lowStockItems = locationStock.filter((item) => item.stock <= item.minStock)
-  const totalProducts = locationStock.length
+  // Use API data
+  const overview = dashboardData.overview
+  const recentActivities = dashboardData.recent_activities
+  const topProducts = dashboardData.top_selling_products || []
 
-  // Recent activities
-  const recentActivities = [
-    ...locationSales.slice(0, 3).map((sale) => ({
+  // Recent activities from API
+  const activities = [
+    ...(recentActivities.recent_sales || []).map((sale: any) => ({
       type: "sale",
-      description: `Sale ${sale.id}`,
-      cashier: sale.cashierName,
-      amount: sale.total,
-      time: new Date(sale.createdAt).toLocaleString(),
+      description: `Sale ${sale.sale_id}`,
+      cashier: sale.cashier,
+      amount: parseFloat(sale.total_amount),
+      time: new Date(sale.created_at).toLocaleString(),
     })),
-    ...locationExpenses.slice(0, 2).map((expense) => ({
+    ...(recentActivities.recent_expenses || []).map((expense: any) => ({
       type: "expense",
       description: expense.description,
-      cashier: expense.createdByName,
-      amount: expense.amount,
-      time: new Date(expense.date).toLocaleString(),
+      cashier: expense.created_by,
+      amount: parseFloat(expense.amount),
+      time: new Date(expense.created_at).toLocaleString(),
     })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
 
@@ -68,8 +109,8 @@ export function ManagerDashboard() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatTSh(totalSales)}</div>
-              <p className="text-xs text-muted-foreground">{locationSales.length} transactions</p>
+              <div className="text-2xl font-bold">{parseFloat(overview.total_sales_revenue).toLocaleString()} TSh</div>
+              <p className="text-xs text-muted-foreground">{overview.total_items_sold} items sold</p>
             </CardContent>
           </Card>
 
@@ -79,7 +120,7 @@ export function ManagerDashboard() {
               <Package className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalProducts}</div>
+              <div className="text-2xl font-bold">{overview.total_products}</div>
               <p className="text-xs text-muted-foreground">in inventory</p>
             </CardContent>
           </Card>
@@ -90,19 +131,19 @@ export function ManagerDashboard() {
               <ShoppingCart className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{formatTSh(totalExpenses)}</div>
-              <p className="text-xs text-muted-foreground">{locationExpenses.length} expenses</p>
+              <div className="text-2xl font-bold">{parseFloat(overview.total_expenses).toLocaleString()} TSh</div>
+              <p className="text-xs text-muted-foreground">total expenses</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Profit</CardTitle>
-              <TrendingUp className={`h-4 w-4 ${profit >= 0 ? "text-green-500" : "text-red-500"}`} />
+              <TrendingUp className={`h-4 w-4 ${overview.total_profit >= 0 ? "text-green-500" : "text-red-500"}`} />
             </CardHeader>
             <CardContent>
-              <div className={`text-2xl font-bold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>
-                {formatTSh(profit)}
+              <div className={`text-2xl font-bold ${overview.total_profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {overview.total_profit.toLocaleString()} TSh
               </div>
               <p className="text-xs text-muted-foreground">this month</p>
             </CardContent>
@@ -112,21 +153,21 @@ export function ManagerDashboard() {
         {/* Alerts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Low Stock Alert */}
-          {lowStockItems.length > 0 && (
+          {parseInt(overview.low_stock_products) > 0 && (
             <Card className="border-orange-200 bg-orange-50">
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2 text-orange-800">
                   <AlertTriangle className="h-5 w-5" />
                   <span>Low Stock Alert</span>
-                  <Badge variant="destructive">{lowStockItems.length}</Badge>
+                  <Badge variant="destructive">{overview.low_stock_products}</Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2 max-h-32 overflow-y-auto">
-                  {lowStockItems.slice(0, 3).map((item) => (
-                    <div key={item.id} className="flex justify-between items-center p-2 bg-white rounded">
-                      <span className="text-sm font-medium">{item.productName}</span>
-                      <span className="text-sm text-orange-700">Stock: {item.stock}</span>
+                  {(recentActivities.low_stock_alerts || []).slice(0, 3).map((item: any, index: number) => (
+                    <div key={index} className="flex justify-between items-center p-2 bg-white rounded">
+                      <span className="text-sm font-medium">{item.product_name || "Product"}</span>
+                      <span className="text-sm text-orange-700">Stock: {item.quantity || 0}</span>
                     </div>
                   ))}
                 </div>
@@ -140,20 +181,20 @@ export function ManagerDashboard() {
           )}
 
           {/* Pending Transfers */}
-          {pendingTransfers.length > 0 && (
+          {overview.pending_transfers > 0 && (
             <Card className="border-blue-200 bg-blue-50">
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2 text-blue-800">
                   <ArrowLeftRight className="h-5 w-5" />
                   <span>Pending Transfers</span>
-                  <Badge variant="default">{pendingTransfers.length}</Badge>
+                  <Badge variant="default">{overview.pending_transfers}</Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2 max-h-32 overflow-y-auto">
-                  {pendingTransfers.slice(0, 3).map((transfer) => (
-                    <div key={transfer.id} className="flex justify-between items-center p-2 bg-white rounded">
-                      <span className="text-sm font-medium">{transfer.productName}</span>
+                  {(recentActivities.recent_transfers || []).slice(0, 3).map((transfer: any) => (
+                    <div key={transfer.transfer_id} className="flex justify-between items-center p-2 bg-white rounded">
+                      <span className="text-sm font-medium">{transfer.product_name}</span>
                       <span className="text-sm text-blue-700">Qty: {transfer.quantity}</span>
                     </div>
                   ))}
@@ -213,7 +254,7 @@ export function ManagerDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentActivities.map((activity, index) => (
+              {activities.map((activity, index) => (
                 <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div className="flex-1">
                     <p className="font-medium">{activity.description}</p>
@@ -224,7 +265,7 @@ export function ManagerDashboard() {
                   <div className="text-right">
                     <p className={`font-semibold ${activity.type === "sale" ? "text-green-600" : "text-red-600"}`}>
                       {activity.type === "sale" ? "+" : "-"}
-                      {formatTSh(activity.amount)}
+                      {activity.amount.toLocaleString()} TSh
                     </p>
                     <Badge variant={activity.type === "sale" ? "default" : "secondary"}>{activity.type}</Badge>
                   </div>
