@@ -20,6 +20,13 @@ interface ApiUser {
   position: string
   created_at: string
   updated_at: string
+  branch?: {
+    id: string
+    name: string
+    location: string
+    contact_number: string
+    is_active: boolean
+  }
 }
 
 interface LoginResponse {
@@ -91,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         status: "active",
         createdAt: data.user.created_at,
         lastLogin: new Date().toISOString(),
-        locationId: "default", // Default location for now
+        locationId: data.user.branch?.id || "default", // Use branch ID from API
         phone: "", // API doesn't provide phone
         createdBy: "system",
         createdByName: "System"
@@ -102,19 +109,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("pos_user", JSON.stringify(transformedUser))
       setUser(transformedUser)
 
-      // Set default location
-      setUserLocation({
-        id: "default",
-        name: "Main Store",
-        address: "Dar es Salaam, Tanzania",
-        city: "Dar es Salaam",
-        region: "Dar es Salaam",
-        phone: "+255 123 456 789",
-        managerId: "default",
-        managerName: "Default Manager",
-        status: "active",
-        createdAt: new Date().toISOString()
-      })
+      // Set branch location from API if available
+      if (data.user.branch) {
+        setUserLocation({
+          id: data.user.branch.id,
+          name: data.user.branch.name,
+          address: data.user.branch.location,
+          city: data.user.branch.location,
+          region: data.user.branch.location,
+          phone: data.user.branch.contact_number,
+          managerId: "default",
+          managerName: "Default Manager",
+          status: data.user.branch.is_active ? "active" : "inactive",
+          createdAt: new Date().toISOString()
+        })
+      } else {
+        // Set default location
+        setUserLocation({
+          id: "default",
+          name: "Main Store",
+          address: "Dar es Salaam, Tanzania",
+          city: "Dar es Salaam",
+          region: "Dar es Salaam",
+          phone: "+255 123 456 789",
+          managerId: "default",
+          managerName: "Default Manager",
+          status: "active",
+          createdAt: new Date().toISOString()
+        })
+      }
 
       return true
     } catch (error) {
