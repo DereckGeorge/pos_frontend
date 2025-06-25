@@ -9,14 +9,17 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { productCategories } from "@/lib/mockData"
+import { productCategories, mockLocations } from "@/lib/mockData"
 import { ArrowLeft, Save } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { createProduct, getAllBranches } from "@/lib/api"
+import { useAuth } from "@/components/auth/AuthProvider"
 
 export default function NewProductPage() {
   const router = useRouter()
+  const { user } = useAuth()
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -26,18 +29,110 @@ export default function NewProductPage() {
     minStock: "",
     barcode: "",
     category: "",
+    branch_id: ""
   })
+  const [branches, setBranches] = useState<{ id: string; name: string; address: string }[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [branchesLoading, setBranchesLoading] = useState(true)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    async function fetchBranches() {
+      try {
+        setBranchesLoading(true)
+        const response = await getAllBranches()
+        console.log("Branches API response:", response) // Debug log
+        
+        if (response.error) {
+          console.error("Error fetching branches:", response.error)
+          // Fallback to mock branches if API fails
+          const mockBranches = mockLocations.map(loc => ({
+            id: loc.id,
+            name: loc.name,
+            address: loc.address
+          }))
+          setBranches(mockBranches)
+          setBranchesLoading(false)
+          return
+        }
+
+        let branchesData = []
+        
+        // Handle the correct API response structure
+        if (response.data && response.data.data && response.data.data.branches) {
+          branchesData = response.data.data.branches
+        } else if (response.data && response.data.branches) {
+          branchesData = response.data.branches
+        } else if (Array.isArray(response.data)) {
+          branchesData = response.data
+        }
+
+        console.log("Processed branches data:", branchesData) // Debug log
+        
+        // If no branches found from API, use mock data
+        if (branchesData.length === 0) {
+          console.log("No branches from API, using mock data")
+          branchesData = mockLocations.map(loc => ({
+            id: loc.id,
+            name: loc.name,
+            address: loc.address
+          }))
+        }
+        
+        setBranches(branchesData)
+        setBranchesLoading(false)
+      } catch (error) {
+        console.error("Error in fetchBranches:", error)
+        // Fallback to mock branches on error
+        const mockBranches = mockLocations.map(loc => ({
+          id: loc.id,
+          name: loc.name,
+          address: loc.address
+        }))
+        setBranches(mockBranches)
+        setBranchesLoading(false)
+      }
+    }
+    fetchBranches()
+    // Pre-select manager's branch
+    if (user?.role === "manager" && user?.locationId) {
+      setFormData(prev => ({
+        ...prev,
+        branch_id: user.locationId!
+      }))
+    }
+  }, [user])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
+    setError("")
 
-    if (!formData.name || !formData.price || !formData.cost || !formData.category) {
-      alert("Please fill in all required fields")
+    if (!formData.name || !formData.price || !formData.cost || !formData.category || !formData.branch_id) {
+      setError("Please fill in all required fields")
+      setLoading(false)
       return
     }
 
-    // In a real app, this would save to the backend
-    alert("Product added successfully!")
+    const payload = {
+      name: formData.name,
+      code: formData.barcode,
+      description: formData.description,
+      price: Number(formData.price),
+      cost_price: Number(formData.cost),
+      quantity: Number(formData.stock),
+      reorder_level: Number(formData.minStock),
+      unit: "pcs", // You can add a unit field if needed
+      category: formData.category,
+      branch_id: formData.branch_id
+    }
+
+    const response = await createProduct(payload)
+    setLoading(false)
+    if (response.error) {
+      setError(response.error)
+      return
+    }
     router.push("/dashboard/products")
   }
 
@@ -181,6 +276,37 @@ export default function NewProductPage() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="branch_id">Branch *</Label>
+                <Select 
+                  value={formData.branch_id} 
+                  onValueChange={(value) => handleChange("branch_id", value)}
+                  disabled={user?.role === "manager"}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={branchesLoading ? "Loading branches..." : "Select branch"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {branchesLoading ? (
+                      <SelectItem value="loading" disabled>
+                        Loading branches...
+                      </SelectItem>
+                    ) : (
+                      branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>
+                          {branch.name} - {branch.address}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {user?.role === "manager" && (
+                  <p className="text-sm text-gray-500">
+                    Branch is automatically set to your assigned branch
+                  </p>
+                )}
+              </div>
+
               {/* Profit Calculation */}
               {formData.price && formData.cost && (
                 <div className="p-4 bg-gray-50 rounded-lg">
@@ -188,29 +314,28 @@ export default function NewProductPage() {
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
                       <span className="text-gray-600">Selling Price:</span>
-                      <p className="font-semibold">${Number.parseFloat(formData.price || "0").toFixed(2)}</p>
+                      <p className="font-semibold">TSh {Number.parseFloat(formData.price || "0").toLocaleString()}</p>
                     </div>
                     <div>
                       <span className="text-gray-600">Cost Price:</span>
-                      <p className="font-semibold">${Number.parseFloat(formData.cost || "0").toFixed(2)}</p>
+                      <p className="font-semibold">TSh {Number.parseFloat(formData.cost || "0").toLocaleString()}</p>
                     </div>
                     <div>
                       <span className="text-gray-600">Profit:</span>
                       <p className="font-semibold text-green-600">
-                        $
-                        {(Number.parseFloat(formData.price || "0") - Number.parseFloat(formData.cost || "0")).toFixed(
-                          2,
-                        )}
+                        TSh {(Number.parseFloat(formData.price || "0") - Number.parseFloat(formData.cost || "0")).toLocaleString()}
                       </p>
                     </div>
                   </div>
                 </div>
               )}
 
+              {error && <p className="text-red-600 text-sm">{error}</p>}
+
               <div className="flex space-x-4">
-                <Button type="submit" className="flex-1">
+                <Button type="submit" className="flex-1" disabled={loading}>
                   <Save className="h-4 w-4 mr-2" />
-                  Add Product
+                  {loading ? "Adding..." : "Add Product"}
                 </Button>
                 <Link href="/dashboard/products">
                   <Button type="button" variant="outline">
