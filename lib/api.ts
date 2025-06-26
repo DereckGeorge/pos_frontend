@@ -22,7 +22,14 @@ export async function apiRequest<T = any>(
       defaultHeaders["Authorization"] = `Bearer ${token}`
     }
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const fullUrl = `${API_BASE_URL}${endpoint}`
+    console.log("🚀 HTTP Request Details:")
+    console.log("   URL:", fullUrl)
+    console.log("   Method:", options.method || "GET")
+    console.log("   Headers:", defaultHeaders)
+    console.log("   Body:", options.body || "No body")
+
+    const response = await fetch(fullUrl, {
       ...options,
       headers: {
         ...defaultHeaders,
@@ -30,17 +37,24 @@ export async function apiRequest<T = any>(
       },
     })
 
+    console.log("📡 HTTP Response Details:")
+    console.log("   Status:", response.status)
+    console.log("   Status Text:", response.statusText)
+    console.log("   Headers:", Object.fromEntries(response.headers.entries()))
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
+      console.error("❌ HTTP Error Response:", errorData)
       return {
         error: errorData.message || `HTTP error! status: ${response.status}`,
       }
     }
 
     const data = await response.json()
+    console.log("✅ HTTP Success Response:", data)
     return { data }
   } catch (error) {
-    console.error("API request failed:", error)
+    console.error("💥 Network Error:", error)
     return {
       error: error instanceof Error ? error.message : "Network error",
     }
@@ -198,8 +212,9 @@ export async function createExpenseCategory(categoryData: {
   })
 }
 
-export async function getExpenseCategories() {
-  return apiRequest("/expense-categories")
+export const getExpenseCategories = async (): Promise<any> => {
+  const response = await apiRequest("/expense-categories")
+  return response.data
 }
 
 export async function updateExpenseCategory(categoryId: string, categoryData: {
@@ -235,11 +250,12 @@ export async function createStockTransfer(data: {
   reason: string
 }) {
   try {
+    const token = localStorage.getItem("pos_token")
     const response = await fetch(`${API_BASE_URL}/products/transfers`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getToken()}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify(data),
     })
@@ -259,11 +275,12 @@ export async function createStockTransfer(data: {
 
 export async function approveStockTransfer(transferId: string) {
   try {
+    const token = localStorage.getItem("pos_token")
     const response = await fetch(`${API_BASE_URL}/products/transfers/${transferId}/approve`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getToken()}`,
+        Authorization: `Bearer ${token}`,
       },
     })
 
@@ -282,11 +299,12 @@ export async function approveStockTransfer(transferId: string) {
 
 export async function rejectStockTransfer(transferId: string, reason: string) {
   try {
+    const token = localStorage.getItem("pos_token")
     const response = await fetch(`${API_BASE_URL}/products/transfers/${transferId}/reject`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${getToken()}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ reason }),
     })
@@ -318,4 +336,70 @@ export async function getManagerReportStatistics() {
 
 export async function getManagerDashboardOverview() {
   return apiRequest("/manager/dashboard/overview")
+}
+
+// Cashier Expense Management
+export const getCashierExpenses = async (): Promise<any> => {
+  const response = await apiRequest('/expenses')
+  return response.data
+}
+
+export const createExpense = async (expenseData: {
+  expense_category_id: string
+  amount: number
+  description: string
+  expense_date: string
+  receipt_number: string
+  payment_method: string
+  payment_reference: string
+}): Promise<any> => {
+  const response = await apiRequest('/expenses', {
+    method: 'POST',
+    body: JSON.stringify(expenseData)
+  })
+  return response.data
+}
+
+// Cashier Sales Management
+export const getCashierProducts = async (params?: {
+  category?: string
+  search?: string
+}): Promise<any> => {
+  const queryParams = new URLSearchParams()
+  if (params?.category) queryParams.append('category', params.category)
+  if (params?.search) queryParams.append('search', params.search)
+  
+  const url = `/products${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
+  const response = await apiRequest(url)
+  return response.data
+}
+
+export const createSale = async (saleData: {
+  items: Array<{
+    product_id: string
+    quantity: number
+  }>
+  payment_method: string
+  payment_reference: string
+  notes?: string
+}): Promise<any> => {
+  const response = await apiRequest('/sales', {
+    method: 'POST',
+    body: JSON.stringify(saleData)
+  })
+  return response.data
+}
+
+// Branch Management
+export const getBranchDetails = async (branchId: string): Promise<any> => {
+  console.log("🌐 Making API request to:", `/dashboard/branches/${branchId}`)
+  console.log("🏢 Branch ID:", branchId)
+  
+  const token = localStorage.getItem("pos_token")
+  console.log("🔑 Using token:", token ? `${token.substring(0, 20)}...` : "No token")
+  
+  const response = await apiRequest(`/dashboard/branches/${branchId}`)
+  console.log("📡 Raw API Response:", response)
+  
+  return response.data
 } 
