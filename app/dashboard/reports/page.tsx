@@ -134,8 +134,211 @@ export default function ReportsPage() {
   const detailedExpenses = reportData.recent_activities?.recent_expenses || []
 
   const handleExport = (format: "csv" | "pdf") => {
-    // In a real app, this would generate and download the report
-    alert(`Exporting ${reportType} report as ${format.toUpperCase()}...`)
+    if (format === "csv") {
+      exportToCSV()
+    } else if (format === "pdf") {
+      exportToPDF()
+    }
+  }
+
+  const exportToCSV = () => {
+    if (!reportData) return
+
+    let csvContent = ""
+    
+    // Add header
+    csvContent += "Report Type,Date Range,Generated On\n"
+    csvContent += `${reportType.toUpperCase()},${dateRange.startDate} to ${dateRange.endDate},${new Date().toLocaleDateString()}\n\n`
+    
+    // Financial Overview
+    csvContent += "FINANCIAL OVERVIEW\n"
+    csvContent += "Metric,Value\n"
+    csvContent += `Total Sales,TSh ${financial.total_sales}\n`
+    csvContent += `Total Expenses,TSh ${financial.total_expenses}\n`
+    csvContent += `Net Profit,TSh ${financial.net_profit}\n`
+    csvContent += `Profit Margin,${financial.net_profit_margin}\n\n`
+    
+    // Sales by Day
+    if (salesByDay.length > 0) {
+      csvContent += "SALES BY DAY\n"
+      csvContent += "Date,Amount (TSh)\n"
+      salesByDay.forEach((item: any) => {
+        csvContent += `${item.date},${item.amount}\n`
+      })
+      csvContent += "\n"
+    }
+    
+    // Expenses by Category
+    if (expensesChartData.length > 0) {
+      csvContent += "EXPENSES BY CATEGORY\n"
+      csvContent += "Category,Amount (TSh)\n"
+      expensesChartData.forEach((item: any) => {
+        csvContent += `${item.category},${item.amount}\n`
+      })
+      csvContent += "\n"
+    }
+    
+    // Top Products
+    if (topProducts.length > 0) {
+      csvContent += "TOP SELLING PRODUCTS\n"
+      csvContent += "Product,Quantity Sold\n"
+      topProducts.forEach((item: any) => {
+        csvContent += `${item.name},${item.quantity}\n`
+      })
+      csvContent += "\n"
+    }
+    
+    // Recent Transactions
+    if (recentTransactions.length > 0) {
+      csvContent += "RECENT TRANSACTIONS\n"
+      csvContent += "ID,Date,Total Amount (TSh),Items\n"
+      recentTransactions.forEach((transaction: any) => {
+        const items = transaction.items.map((item: any) => `${item.product_name} (${item.quantity})`).join("; ")
+        csvContent += `${transaction.id},${transaction.date},${transaction.total},"${items}"\n`
+      })
+    }
+    
+    // Create and download file
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+    const link = document.createElement("a")
+    const url = URL.createObjectURL(blob)
+    link.setAttribute("href", url)
+    link.setAttribute("download", `${reportType}_report_${dateRange.startDate}_to_${dateRange.endDate}.csv`)
+    link.style.visibility = "hidden"
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const exportToPDF = () => {
+    if (!reportData) return
+
+    // Create a new window for PDF generation
+    const printWindow = window.open("", "_blank")
+    if (!printWindow) {
+      alert("Please allow popups to generate PDF")
+      return
+    }
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${reportType.toUpperCase()} Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          .header { text-align: center; margin-bottom: 30px; }
+          .section { margin-bottom: 20px; }
+          .section h2 { color: #333; border-bottom: 2px solid #3b82f6; padding-bottom: 5px; }
+          table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f8f9fa; font-weight: bold; }
+          .metric { margin: 10px 0; }
+          .metric strong { color: #3b82f6; }
+          @media print {
+            body { margin: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${reportType.toUpperCase()} REPORT</h1>
+          <p>Date Range: ${dateRange.startDate} to ${dateRange.endDate}</p>
+          <p>Generated: ${new Date().toLocaleDateString()}</p>
+        </div>
+
+        <div class="section">
+          <h2>Financial Overview</h2>
+          <div class="metric"><strong>Total Sales:</strong> TSh ${financial.total_sales}</div>
+          <div class="metric"><strong>Total Expenses:</strong> TSh ${financial.total_expenses}</div>
+          <div class="metric"><strong>Net Profit:</strong> TSh ${financial.net_profit}</div>
+          <div class="metric"><strong>Profit Margin:</strong> ${financial.net_profit_margin}</div>
+        </div>
+
+        ${salesByDay.length > 0 ? `
+        <div class="section">
+          <h2>Sales by Day</h2>
+          <table>
+            <thead>
+              <tr><th>Date</th><th>Amount (TSh)</th></tr>
+            </thead>
+            <tbody>
+              ${salesByDay.map((item: any) => `
+                <tr><td>${item.date}</td><td>${item.amount}</td></tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        ` : ""}
+
+        ${expensesChartData.length > 0 ? `
+        <div class="section">
+          <h2>Expenses by Category</h2>
+          <table>
+            <thead>
+              <tr><th>Category</th><th>Amount (TSh)</th></tr>
+            </thead>
+            <tbody>
+              ${expensesChartData.map((item: any) => `
+                <tr><td>${item.category}</td><td>${item.amount}</td></tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        ` : ""}
+
+        ${topProducts.length > 0 ? `
+        <div class="section">
+          <h2>Top Selling Products</h2>
+          <table>
+            <thead>
+              <tr><th>Product</th><th>Quantity Sold</th></tr>
+            </thead>
+            <tbody>
+              ${topProducts.map((item: any) => `
+                <tr><td>${item.name}</td><td>${item.quantity}</td></tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        ` : ""}
+
+        ${recentTransactions.length > 0 ? `
+        <div class="section">
+          <h2>Recent Transactions</h2>
+          <table>
+            <thead>
+              <tr><th>ID</th><th>Date</th><th>Total Amount (TSh)</th><th>Items</th></tr>
+            </thead>
+            <tbody>
+              ${recentTransactions.map((transaction: any) => {
+                const items = transaction.items.map((item: any) => `${item.product_name} (${item.quantity})`).join(", ")
+                return `
+                  <tr>
+                    <td>${transaction.id}</td>
+                    <td>${transaction.date}</td>
+                    <td>${transaction.total}</td>
+                    <td>${items}</td>
+                  </tr>
+                `
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+        ` : ""}
+
+        <div class="no-print" style="margin-top: 30px; text-align: center;">
+          <button onclick="window.print()" style="padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            Print PDF
+          </button>
+        </div>
+      </body>
+      </html>
+    `
+
+    printWindow.document.write(printContent)
+    printWindow.document.close()
   }
 
   return (
@@ -316,7 +519,7 @@ export default function ReportsPage() {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, value }) => `${name}: ${value.toLocaleString()}`}
+                    label={({ name, value }) => `${name}: ${value?.toLocaleString() || '0'}`}
                     outerRadius={80}
                     fill="#8884d8"
                     dataKey="quantity"
