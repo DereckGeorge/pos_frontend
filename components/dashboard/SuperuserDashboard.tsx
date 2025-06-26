@@ -4,7 +4,7 @@ import { Layout } from "@/components/common/Layout"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { mockSales, mockExpenses, formatTSh } from "@/lib/mockData"
+import { formatTSh } from "@/lib/mockData"
 import { getSuperuserDashboard, getPendingUsers } from "@/lib/api"
 import { useAuth } from "@/components/auth/AuthProvider"
 import { Building, Users, DollarSign, TrendingUp, MapPin, UserPlus, AlertCircle, Eye } from "lucide-react"
@@ -20,6 +20,27 @@ interface DashboardData {
   gross_profit: number
   net_profit: number
   pending_users: number
+  recent_activities: {
+    user_approvals: any[]
+    transfer_approvals: any[]
+    recent_sales: Array<{
+      sale_id: string
+      branch: string
+      cashier: string
+      total_amount: string
+      payment_method: string
+      created_at: string
+    }>
+    recent_expenses: Array<{
+      expense_id: string
+      branch: string
+      category: string | null
+      amount: string
+      description: string
+      created_by: string
+      created_at: string
+    }>
+  }
   branches: Array<{
     id: string
     name: string
@@ -104,8 +125,8 @@ export function SuperuserDashboard() {
   // Use API data if available, otherwise fall back to mock data
   const totalLocations = dashboardData?.total_branches || 0
   const totalUsers = dashboardData?.total_users || 0
-  const totalSales = dashboardData ? parseFloat(dashboardData.total_revenue) : mockSales.reduce((sum, sale) => sum + sale.total, 0)
-  const totalExpenses = dashboardData ? parseFloat(dashboardData.total_expenses) : mockExpenses.reduce((sum, expense) => sum + expense.amount, 0)
+  const totalSales = dashboardData ? parseFloat(dashboardData.total_revenue) : 0
+  const totalExpenses = dashboardData ? parseFloat(dashboardData.total_expenses) : 0
   const netProfit = dashboardData?.net_profit || (totalSales - totalExpenses)
   const pendingRequests = pendingUsersData?.statistics?.pending || 0
 
@@ -124,23 +145,47 @@ export function SuperuserDashboard() {
     salesCount: branch.total_sales,
   })) || []
 
-  // Recent activities (keep mock data for now as API doesn't provide this)
-  const recentActivities = [
-    ...mockSales.slice(0, 3).map((sale) => ({
-      type: "sale",
-      description: `Sale ${sale.id} completed`,
-      location: sale.locationName,
-      amount: sale.total,
-      time: new Date(sale.createdAt).toLocaleString(),
-    })),
-    ...mockExpenses.slice(0, 2).map((expense) => ({
-      type: "expense",
-      description: expense.description,
-      location: expense.locationName,
-      amount: expense.amount,
-      time: new Date(expense.date).toLocaleString(),
-    })),
-  ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+  // Recent activities from API data
+  const recentActivities = (() => {
+    const activities: Array<{
+      type: "sale" | "expense"
+      description: string
+      location: string
+      amount: number
+      time: string
+    }> = []
+
+    // Add recent sales from API
+    if (dashboardData?.recent_activities?.recent_sales) {
+      dashboardData.recent_activities.recent_sales.forEach((sale) => {
+        activities.push({
+          type: "sale",
+          description: `Sale ${sale.sale_id.slice(0, 8)}... by ${sale.cashier}`,
+          location: sale.branch,
+          amount: parseFloat(sale.total_amount),
+          time: new Date(sale.created_at).toLocaleString(),
+        })
+      })
+    }
+
+    // Add recent expenses from API
+    if (dashboardData?.recent_activities?.recent_expenses) {
+      dashboardData.recent_activities.recent_expenses.forEach((expense) => {
+        activities.push({
+          type: "expense",
+          description: expense.description,
+          location: expense.branch,
+          amount: parseFloat(expense.amount),
+          time: new Date(expense.created_at).toLocaleString(),
+        })
+      })
+    }
+
+    // Sort by time (most recent first) and take the first 5
+    return activities
+      .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+      .slice(0, 5)
+  })()
 
   if (loading) {
     return (
@@ -295,25 +340,33 @@ export function SuperuserDashboard() {
             <CardTitle>Recent Activities</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {recentActivities.map((activity, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex-1">
-                    <p className="font-medium">{activity.description}</p>
-                    <p className="text-sm text-gray-600">
-                      {activity.location} • {activity.time}
-                    </p>
+            {recentActivities.length === 0 ? (
+              <div className="text-center py-8">
+                <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600">No recent activities</p>
+                <p className="text-sm text-gray-500">Activities will appear here as they happen</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recentActivities.map((activity, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium">{activity.description}</p>
+                      <p className="text-sm text-gray-600">
+                        {activity.location} • {activity.time}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-semibold ${activity.type === "sale" ? "text-green-600" : "text-red-600"}`}>
+                        {activity.type === "sale" ? "+" : "-"}
+                        {formatTSh(activity.amount)}
+                      </p>
+                      <Badge variant={activity.type === "sale" ? "default" : "secondary"}>{activity.type}</Badge>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className={`font-semibold ${activity.type === "sale" ? "text-green-600" : "text-red-600"}`}>
-                      {activity.type === "sale" ? "+" : "-"}
-                      {formatTSh(activity.amount)}
-                    </p>
-                    <Badge variant={activity.type === "sale" ? "default" : "secondary"}>{activity.type}</Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
