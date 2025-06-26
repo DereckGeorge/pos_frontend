@@ -73,10 +73,10 @@ export default function ExpenseCategoriesPage() {
         return
       }
 
-      const data = response.data as ApiExpenseCategoriesResponse
-      setCategories(data.categories)
-      setCategoryUsage(data.recent_activities.category_usage)
-      setRecentExpenses(data.recent_activities.recent_expenses)
+      // The API returns { message, categories, recent_activities }
+      setCategories(response.categories || [])
+      setCategoryUsage(response.recent_activities?.category_usage || [])
+      setRecentExpenses(response.recent_activities?.recent_expenses || [])
     } catch (err) {
       setError("Failed to fetch expense categories")
       console.error("Error fetching expense categories:", err)
