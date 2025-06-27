@@ -15,6 +15,7 @@ import Link from "next/link"
 import { getCashierProducts, createSale } from "@/lib/api"
 import { useAuth } from "@/components/auth/AuthProvider"
 import { formatTSh } from "@/lib/mockData"
+import Receipt from "@/components/sales/Receipt"
 
 interface Product {
   id: string
@@ -43,7 +44,7 @@ interface CartItem {
 
 export default function NewSalePage() {
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, userLocation } = useAuth()
   const [products, setProducts] = useState<Product[]>([])
   const [cart, setCart] = useState<CartItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -52,6 +53,8 @@ export default function NewSalePage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
+  const [showReceipt, setShowReceipt] = useState(false)
+  const [saleReceipt, setSaleReceipt] = useState<any>(null)
 
   const [checkoutData, setCheckoutData] = useState({
     payment_method: "cash",
@@ -176,12 +179,41 @@ export default function NewSalePage() {
         notes: checkoutData.notes
       }
 
-      await createSale(saleData)
+      const response = await createSale(saleData)
       
+      if (response.error) {
+        setError(response.error)
+        return
+      }
+
+      // Generate receipt data
+      const subtotal = getCartTotal()
+      const vatAmount = subtotal * 0.18 // 18% VAT
+      const totalAmount = subtotal + vatAmount
+
+      const receiptData = {
+        id: response.data?.id || `SALE_${Date.now()}`,
+        receipt_number: response.data?.receipt_number || `RCP_${Date.now()}`,
+        date: new Date().toISOString(),
+        items: cart.map(item => ({
+          product_name: item.product.name,
+          quantity: item.quantity,
+          unit_price: item.unitPrice,
+          total_price: item.totalPrice
+        })),
+        subtotal: subtotal,
+        vat_amount: vatAmount,
+        total_amount: totalAmount,
+        payment_method: checkoutData.payment_method,
+        payment_reference: checkoutData.payment_reference,
+        cashier_name: user?.name || "Cashier",
+        branch_name: userLocation?.name || "Branch",
+        branch_location: userLocation?.address || "Location"
+      }
+
+      setSaleReceipt(receiptData)
+      setShowReceipt(true)
       setSuccess(true)
-      setTimeout(() => {
-        router.push("/dashboard/sales")
-      }, 2000)
     } catch (err) {
       setError("Failed to create sale")
       console.error("Error creating sale:", err)
@@ -209,7 +241,7 @@ export default function NewSalePage() {
             </Link>
             <div>
               <h2 className="text-2xl font-bold">New Sale</h2>
-              <p className="text-gray-600">Select products for {user?.locationName || "your branch"}</p>
+              <p className="text-gray-600">Select products for {userLocation?.name || "your branch"}</p>
             </div>
           </div>
 
@@ -409,7 +441,7 @@ export default function NewSalePage() {
                     {success && (
                       <div className="flex items-center space-x-2 text-green-600">
                         <CheckCircle className="w-4 h-4" />
-                        <span className="text-sm">Sale completed successfully!</span>
+                        <span className="text-sm">Sale completed successfully! Receipt is ready.</span>
                       </div>
                     )}
 
@@ -431,6 +463,16 @@ export default function NewSalePage() {
                       >
                         Clear Cart
                       </Button>
+
+                      {success && (
+                        <Button 
+                          variant="outline" 
+                          onClick={() => router.push("/dashboard/sales")}
+                          className="w-full"
+                        >
+                          View All Sales
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </>
@@ -439,6 +481,20 @@ export default function NewSalePage() {
           </Card>
         </div>
       </div>
+
+      {/* Receipt Modal */}
+      {showReceipt && saleReceipt && (
+        <Receipt 
+          sale={saleReceipt} 
+          onClose={() => {
+            setShowReceipt(false)
+            setSaleReceipt(null)
+            setSuccess(false)
+            setCart([])
+            router.push("/dashboard/sales")
+          }} 
+        />
+      )}
     </Layout>
   )
 }
