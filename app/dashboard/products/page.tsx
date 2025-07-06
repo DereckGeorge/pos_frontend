@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { getProducts, deleteProduct } from "@/lib/api"
-import { Plus, Search, Edit, Trash2, AlertTriangle, Loader2 } from "lucide-react"
+import { Plus, Search, Edit, Trash2, AlertTriangle, Loader2, Package } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect } from "react"
 import { EditProductForm } from "@/components/products/EditProductForm"
@@ -195,12 +195,20 @@ export default function ProductsPage() {
             <h2 className="text-2xl font-bold">Products</h2>
             <p className="text-gray-600">Manage your product inventory</p>
           </div>
-          <Link href="/dashboard/products/new">
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Product
-            </Button>
-          </Link>
+          <div className="flex space-x-2">
+            <Link href="/dashboard/products/batches">
+              <Button variant="outline">
+                <Package className="h-4 w-4 mr-2" />
+                Product Batches
+              </Button>
+            </Link>
+            <Link href="/dashboard/products/new">
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Product
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Product Stats */}

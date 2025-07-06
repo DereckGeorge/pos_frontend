@@ -153,8 +153,9 @@ export async function getBranchesForProducts() {
   return apiRequest("/branches")
 }
 
-export async function getProducts() {
-  return apiRequest("/products")
+export async function getProducts(queryParams?: string) {
+  const endpoint = queryParams ? `/products?${queryParams}` : "/products"
+  return apiRequest(endpoint)
 }
 
 export async function updateProduct(productId: string, productData: {
@@ -195,6 +196,49 @@ export async function deleteProduct(productId: string) {
   return apiRequest(`/products/${productId}`, {
     method: "DELETE",
   })
+}
+
+export async function createBatch(batchData: {
+  supplier_name: string
+  branch_id: string
+  delivery_date: string
+  supplier_phone?: string
+  supplier_email?: string
+  supplier_address?: string
+  items: Array<{
+    product_id?: string
+    name?: string
+    code?: string
+    description?: string
+    price?: number
+    cost_price?: number
+    quantity: number
+    reorder_level?: number
+    unit?: string
+    category?: string
+    expiry_date?: string
+    loan_amount?: number
+    loan_paid?: number
+  }>
+}) {
+  return apiRequest("/batches", {
+    method: "POST",
+    body: JSON.stringify(batchData),
+  })
+}
+
+export async function getBatches(queryParams?: string) {
+  const endpoint = queryParams ? `/batches?${queryParams}` : "/batches"
+  return apiRequest(endpoint)
+}
+
+export async function getBatchStatistics(queryParams?: string) {
+  const endpoint = queryParams ? `/batches/statistics?${queryParams}` : "/batches/statistics"
+  return apiRequest(endpoint)
+}
+
+export async function getBatchDetails(batchId: string) {
+  return apiRequest(`/batches/${batchId}`)
 }
 
 export async function getExpenseStatistics() {
